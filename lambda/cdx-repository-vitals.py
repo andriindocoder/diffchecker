@@ -33,10 +33,17 @@ def fetch_all_pull_requests(client, repository_name, status):
 def lambda_handler(event, context):
     query_params = event.get('queryStringParameters', {})
     repository_name = query_params.get('repository-name', 'cdx-mf-financing-core')
-    start_date_str = query_params.get('start-date', '2024-08-01')
-    end_date_str = query_params.get('end-date', '2024-08-10')
+    
+    # Get current date and calculate start date as today - 30 days
+    end_date_default = datetime.now()
+    start_date_default = end_date_default - timedelta(days=30)
+
+    # Use query parameters if provided, else use defaults
+    start_date_str = query_params.get('start-date', start_date_default.strftime('%Y-%m-%d'))
+    end_date_str = query_params.get('end-date', end_date_default.strftime('%Y-%m-%d'))
 
     try:
+        # Parse the provided or default start and end dates
         start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
         end_date = datetime.strptime(end_date_str, "%Y-%m-%d")
 
