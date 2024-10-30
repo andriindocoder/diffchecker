@@ -55,8 +55,11 @@ def get_pr_data_from_codecommit(repository_name, date):
 def lambda_handler(event, context):
     query_params = event.get('queryStringParameters', {})
     repository_name = query_params.get('repository-name', 'cdx-android-app')
-    start_date_str = query_params.get('start-date', '2024-10-01')
-    end_date_str = query_params.get('end-date', '2024-10-28')
+    # Set default start-date as 30 days before today and end-date as today
+    end_date_default = datetime.now().date()
+    start_date_default = end_date_default - timedelta(days=30)
+    start_date_str = query_params.get('start-date', start_date_default.strftime('%Y-%m-%d'))
+    end_date_str = query_params.get('end-date', end_date_default.strftime('%Y-%m-%d'))
     
     try:
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
