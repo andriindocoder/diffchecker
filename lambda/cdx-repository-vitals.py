@@ -39,8 +39,8 @@ def lambda_handler(event, context):
     start_date_default = end_date_default - timedelta(days=30)
 
     # Use query parameters if provided, else use defaults
-    start_date_str = query_params.get('start-date', start_date_default.strftime('%Y-%m-%d'))
-    end_date_str = query_params.get('end-date', end_date_default.strftime('%Y-%m-%d'))
+    start_date_str = query_params.get('start-date', '2024-10-01')
+    end_date_str = query_params.get('end-date', '2024-10-02')
 
     try:
         # Parse the provided or default start and end dates
