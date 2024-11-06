@@ -50,7 +50,7 @@ def get_pr_data_from_codecommit(repository_name, date):
                     date_count["pr_status"]["closed"] += 1
             date_count["pr_count"] += 1
 
-    return {"date": date.strftime('%Y-%m-%d'), "pr_count": date_count["pr_count"]}
+    return {"date": date.strftime('%Y-%m-%d'), "pr_count": date_count["pr_count"], "pr_status": date_count["pr_status"]}
 
 def lambda_handler(event, context):
     query_params = event.get('queryStringParameters', {})
@@ -93,8 +93,32 @@ def lambda_handler(event, context):
                 total_open += entry["pr_status"]["open"]
                 total_closed += entry["pr_status"]["closed"]
                 total_merged += entry["pr_status"]["merged"]
+            elif current_date == end_date_default.strftime('%Y-%m-%d'):
+                # If the missing date is today, fetch data from CodeCommit
+                new_data = get_pr_data_from_codecommit(repository_name, datetime.strptime(current_date, '%Y-%m-%d').date())
+                pr_data.append({
+                    "date": current_date,
+                    "pr_count": new_data["pr_count"]
+                })
+                total_open += new_data["pr_status"]["open"]
+                total_closed += new_data["pr_status"]["closed"]
+                total_merged += new_data["pr_status"]["merged"]
+                # Append today's data to the JSON file for future use
+                repo_data_entry['data'].append(new_data)
             else:
-                missing_dates.append(current_date)
+                # For dates in the past that are missing, assume zero counts
+                pr_data.append({
+                    "date": current_date,
+                    "pr_count": 0
+                })
+
+        # Sorting repo data and writing back if today's data was added
+        repo_data_entry['data'].sort(key=lambda x: x['date'])
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=file_key,
+            Body=json.dumps(data)
+        )
 
         result = {
             "repository_name": repository_name,
@@ -122,18 +146,6 @@ def lambda_handler(event, context):
             },
             "body": json.dumps(result)
         }
-
-        for date_str in missing_dates:
-            date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
-            new_data = get_pr_data_from_codecommit(repository_name, date_obj)
-            repo_data_entry['data'].append(new_data)
-
-        repo_data_entry['data'].sort(key=lambda x: x['date'])
-        s3_client.put_object(
-            Bucket=bucket_name,
-            Key=file_key,
-            Body=json.dumps(data)
-        )
 
         return response_data
 
