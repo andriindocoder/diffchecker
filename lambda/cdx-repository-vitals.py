@@ -85,8 +85,8 @@ def lambda_handler(event, context):
         total_closed = 0
         total_merged = 0
 
-        for n in range((end_date - last_date_in_json).days + 1):
-            current_date = last_date_in_json + timedelta(days=n)
+        for n in range((end_date - start_date).days + 1):
+            current_date = start_date + timedelta(days=n)
             current_date_str = current_date.strftime('%Y-%m-%d')
 
             # Check if date exists in JSON
