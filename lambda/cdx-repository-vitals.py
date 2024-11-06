@@ -55,12 +55,11 @@ def get_pr_data_from_codecommit(repository_name, date):
 def lambda_handler(event, context):
     query_params = event.get('queryStringParameters', {})
     repository_name = query_params.get('repository-name', 'cdx-android-app')
-    # Set default start-date as 30 days before today and end-date as today
     end_date_default = datetime.now().date()
     start_date_default = end_date_default - timedelta(days=30)
     start_date_str = query_params.get('start-date', start_date_default.strftime('%Y-%m-%d'))
     end_date_str = query_params.get('end-date', end_date_default.strftime('%Y-%m-%d'))
-    
+
     try:
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
         end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
@@ -73,40 +72,57 @@ def lambda_handler(event, context):
         if repo_data_entry is None:
             repo_data_entry = {"repository_name": repository_name, "data": []}
             data.append(repo_data_entry)
-        
-        existing_dates = {entry['date']: entry for entry in repo_data_entry['data']}
-        pr_data = []
-        missing_dates = []
 
+        # Find the last date in the JSON data for this repository
+        if repo_data_entry['data']:
+            last_date_in_json = max(datetime.strptime(entry['date'], '%Y-%m-%d').date() for entry in repo_data_entry['data'])
+        else:
+            last_date_in_json = start_date
+
+        # Ensure all dates from the last entry up to today are populated
+        pr_data = []
         total_open = 0
         total_closed = 0
         total_merged = 0
 
-        for n in range((end_date - start_date).days + 1):
-            current_date = start_date + timedelta(days=n)
+        for n in range((end_date - last_date_in_json).days + 1):
+            current_date = last_date_in_json + timedelta(days=n)
             current_date_str = current_date.strftime('%Y-%m-%d')
-            
-            if current_date_str in existing_dates:
-                entry = existing_dates[current_date_str]
+
+            # Check if date exists in JSON
+            existing_entry = next((entry for entry in repo_data_entry['data'] if entry['date'] == current_date_str), None)
+            if existing_entry:
                 pr_data.append({
                     "date": current_date_str,
-                    "pr_count": entry["pr_count"],
-                    "pr_status": entry["pr_status"]
+                    "pr_count": existing_entry["pr_count"]
                 })
-                total_open += entry["pr_status"]["open"]
-                total_closed += entry["pr_status"]["closed"]
-                total_merged += entry["pr_status"]["merged"]
-            elif current_date <= datetime.now().date():
-                # Only query CodeCommit for dates up to today, not future dates
-                new_data = get_pr_data_from_codecommit(repository_name, current_date)
-                pr_data.append(new_data)
-                total_open += new_data["pr_status"]["open"]
-                total_closed += new_data["pr_status"]["closed"]
-                total_merged += new_data["pr_status"]["merged"]
-                if current_date == datetime.now().date():
-                    # Only write back today's data to S3
+                total_open += existing_entry["pr_status"]["open"]
+                total_closed += existing_entry["pr_status"]["closed"]
+                total_merged += existing_entry["pr_status"]["merged"]
+            else:
+                # Only fetch data from CodeCommit for dates up to today (not future dates)
+                if current_date <= end_date_default:
+                    new_data = get_pr_data_from_codecommit(repository_name, current_date)
+                    pr_data.append({
+                        "date": current_date_str,
+                        "pr_count": new_data["pr_count"]
+                    })
+                    total_open += new_data["pr_status"]["open"]
+                    total_closed += new_data["pr_status"]["closed"]
+                    total_merged += new_data["pr_status"]["merged"]
+                    # Append new data only for non-future dates
                     repo_data_entry['data'].append(new_data)
 
+        # Sort and write back to S3 only if new data was added
+        repo_data_entry['data'].sort(key=lambda x: x['date'])
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=file_key,
+            Body=json.dumps(data)
+        )
+
+        # Prepare the response data
+        total_pr_count = total_open + total_closed + total_merged
         result = {
             "repository_name": repository_name,
             "pr_data": pr_data,
@@ -114,17 +130,15 @@ def lambda_handler(event, context):
                 "open": total_open,
                 "closed": total_closed,
                 "merged": total_merged
+            },
+            "pr_status_percentage": {
+                "open_percentage": round((total_open / total_pr_count) * 100, 2) if total_pr_count else 0.0,
+                "closed_percentage": round((total_closed / total_pr_count) * 100, 2) if total_pr_count else 0.0,
+                "merged_percentage": round((total_merged / total_pr_count) * 100, 2) if total_pr_count else 0.0
             }
         }
 
-        total_pr_count = total_open + total_closed + total_merged
-        result["pr_status_percentage"] = {
-            "open_percentage": round((total_open / total_pr_count) * 100, 2) if total_pr_count else 0.0,
-            "closed_percentage": round((total_closed / total_pr_count) * 100, 2) if total_pr_count else 0.0,
-            "merged_percentage": round((total_merged / total_pr_count) * 100, 2) if total_pr_count else 0.0
-        }
-
-        response_data = {
+        return {
             "statusCode": 200,
             "headers": {
                 "Access-Control-Allow-Origin": "*",
@@ -133,16 +147,6 @@ def lambda_handler(event, context):
             },
             "body": json.dumps(result)
         }
-
-        # Write only today's data back to S3
-        repo_data_entry['data'].sort(key=lambda x: x['date'])
-        s3_client.put_object(
-            Bucket=bucket_name,
-            Key=file_key,
-            Body=json.dumps(data)
-        )
-
-        return response_data
 
     except Exception as e:
         return {
