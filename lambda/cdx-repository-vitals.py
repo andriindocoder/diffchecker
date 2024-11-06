@@ -50,31 +50,25 @@ def get_pr_data_from_codecommit(repository_name, date):
                     date_count["pr_status"]["closed"] += 1
             date_count["pr_count"] += 1
 
-    return {"date": date.strftime('%Y-%m-%d'), "pr_count": date_count["pr_count"]}
+    return {"date": date.strftime('%Y-%m-%d'), "pr_count": date_count["pr_count"], "pr_status": date_count["pr_status"]}
 
 def lambda_handler(event, context):
     query_params = event.get('queryStringParameters', {})
     repository_name = query_params.get('repository-name', 'cdx-android-app')
-    
-    # Calculate default start-date as 30 days before today and end-date as today
+    # Set default start-date as 30 days before today and end-date as today
     end_date_default = datetime.now().date()
     start_date_default = end_date_default - timedelta(days=30)
-    
-    # Use provided dates if they exist, otherwise default to calculated dates
     start_date_str = query_params.get('start-date', start_date_default.strftime('%Y-%m-%d'))
     end_date_str = query_params.get('end-date', end_date_default.strftime('%Y-%m-%d'))
     
     try:
-        # Convert string dates to date objects
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
         end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
 
-        # Retrieve the JSON file from S3
         response = s3_client.get_object(Bucket=bucket_name, Key=file_key)
         file_content = response['Body'].read().decode('utf-8')
         data = json.loads(file_content)
         
-        # Find the specific repository data
         repo_data_entry = next((repo for repo in data if repo['repository_name'] == repository_name), None)
         if repo_data_entry is None:
             repo_data_entry = {"repository_name": repository_name, "data": []}
@@ -88,22 +82,30 @@ def lambda_handler(event, context):
         total_closed = 0
         total_merged = 0
 
-        # Iterate over the date range and check if data exists for each day
         for n in range((end_date - start_date).days + 1):
-            current_date = (start_date + timedelta(days=n)).strftime('%Y-%m-%d')
-            if current_date in existing_dates:
-                entry = existing_dates[current_date]
+            current_date = start_date + timedelta(days=n)
+            current_date_str = current_date.strftime('%Y-%m-%d')
+            
+            if current_date_str in existing_dates:
+                entry = existing_dates[current_date_str]
                 pr_data.append({
-                    "date": current_date,
-                    "pr_count": entry["pr_count"]
+                    "date": current_date_str,
+                    "pr_count": entry["pr_count"],
+                    "pr_status": entry["pr_status"]
                 })
                 total_open += entry["pr_status"]["open"]
                 total_closed += entry["pr_status"]["closed"]
                 total_merged += entry["pr_status"]["merged"]
-            else:
-                # Only add to missing_dates if the date is today or in the future
-                if current_date >= datetime.now().strftime('%Y-%m-%d'):
-                    missing_dates.append(current_date)
+            elif current_date <= datetime.now().date():
+                # Only query CodeCommit for dates up to today, not future dates
+                new_data = get_pr_data_from_codecommit(repository_name, current_date)
+                pr_data.append(new_data)
+                total_open += new_data["pr_status"]["open"]
+                total_closed += new_data["pr_status"]["closed"]
+                total_merged += new_data["pr_status"]["merged"]
+                if current_date == datetime.now().date():
+                    # Only write back today's data to S3
+                    repo_data_entry['data'].append(new_data)
 
         result = {
             "repository_name": repository_name,
@@ -115,7 +117,6 @@ def lambda_handler(event, context):
             }
         }
 
-        # Calculate pr_status_percentage based on the counts
         total_pr_count = total_open + total_closed + total_merged
         result["pr_status_percentage"] = {
             "open_percentage": round((total_open / total_pr_count) * 100, 2) if total_pr_count else 0.0,
@@ -123,7 +124,6 @@ def lambda_handler(event, context):
             "merged_percentage": round((total_merged / total_pr_count) * 100, 2) if total_pr_count else 0.0
         }
 
-        # Prepare response data
         response_data = {
             "statusCode": 200,
             "headers": {
@@ -134,13 +134,7 @@ def lambda_handler(event, context):
             "body": json.dumps(result)
         }
 
-        # Update S3 only if we are missing today's date or a future date
-        for date_str in missing_dates:
-            date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
-            new_data = get_pr_data_from_codecommit(repository_name, date_obj)
-            repo_data_entry['data'].append(new_data)
-
-        # Sort and write updated data back to S3
+        # Write only today's data back to S3
         repo_data_entry['data'].sort(key=lambda x: x['date'])
         s3_client.put_object(
             Bucket=bucket_name,
