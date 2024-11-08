@@ -74,7 +74,7 @@ def update_catalogue_for_repository(repository_name, bucket_name, file_key):
     
     # If the repository is not found in the existing catalogue, add it as a new entry
     if not repository_found:
-        api_inventory_url = f"http://api.cicd.cdx-bankislam.com/beu-api-inventory-web/{repository_name}/index.html"
+        api_inventory_url = f"http://api.cicd.cdx-bankislam.com/{repository_name}/index.html"
         updated_catalogue.append({
             'repository_name': repository_name,
             'api_inventory_url': api_inventory_url,
