@@ -55,26 +55,29 @@ def update_catalogue_for_repository(repository_name, bucket_name, file_key):
     # Set the trigger date to now
     trigger_date = datetime.now().strftime('%Y-%m-%dT%H:%M:%S.000Z')
     
+    # Define the `api_inventory_url`
+    api_inventory_url = f"https://api.cicd.cdx-bankislam.com/{repository_name}/index.html"
+    
     updated_catalogue = []
     repository_found = False
     
     # Iterate through the existing catalogue to update the matching repository
     for entry in existing_catalogue:
         if entry['repository_name'] == repository_name:
-            # Update the repository entry
+            # Update the repository entry, including `api_inventory_url`
             entry.update({
                 'status': True,  # JSON `true`
                 'trigger_date': trigger_date,
                 'repository_owner': repository_tags['repository_owner'],
                 'repository_domain': repository_tags['repository_domain'],
-                'repository_subdomain': repository_tags['repository_subdomain']
+                'repository_subdomain': repository_tags['repository_subdomain'],
+                'api_inventory_url': api_inventory_url  # Ensure this field is updated
             })
             repository_found = True
         updated_catalogue.append(entry)
     
     # If the repository is not found in the existing catalogue, add it as a new entry
     if not repository_found:
-        api_inventory_url = f"https://api.cicd.cdx-bankislam.com/{repository_name}/index.html"
         updated_catalogue.append({
             'repository_name': repository_name,
             'api_inventory_url': api_inventory_url,
