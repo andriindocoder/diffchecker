@@ -165,7 +165,7 @@ def manage_sns_notifications(repo_name, project_key, branch_name, sonar_status, 
                 f"Repository Name: {repo_name}\n"
                 f"SonarQube Link: {sonarqube_link}\n")
         if jar_url:
-            body += f"JAR File URL: {jar_url}\n"
+            body += f"JAR File URL (Expired in 1 hour): {jar_url}\n"
         body += additional_info
     else:
         sonarqube_link = f"{sonarqube_host}/dashboard?id={project_key}&branch={branch_name}"
@@ -174,7 +174,7 @@ def manage_sns_notifications(repo_name, project_key, branch_name, sonar_status, 
                 f"Branch Name: {branch_name}\n"
                 f"SonarQube Link: {sonarqube_link}\n")
         if jar_url:
-            body += f"JAR File URL: {jar_url}"
+            body += f"JAR File URL (Expired in 1 hour): {jar_url}"
 
     subject = f"SonarQube Scan Result for {repo_name}"
     try:
