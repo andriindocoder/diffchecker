@@ -62,10 +62,12 @@ def process_sonarqube_result(event):
         destination_commit = body.get('properties', {}).get('sonar.analysis.destination_commit', '')
         pr_branch = body.get('properties', {}).get('sonar.analysis.pr_branch', '')
         pr_base = body.get('properties', {}).get('sonar.analysis.pr_base', '')
+        jar_file_url = body.get('properties', {}).get('sonar.analysis.jar_file_url', '')
 
         logger.info("Parsed body: " + json.dumps(body))
         logger.info(f"SonarQube quality gate status: {sonar_status}")
         logger.info(f"PR triggered: {pr_triggered}")
+        logger.info(f"JAR File URL: {jar_file_url}")
 
         return {
             'sonar_status': sonar_status,
@@ -78,7 +80,8 @@ def process_sonarqube_result(event):
             'source_commit': source_commit,
             'destination_commit': destination_commit,
             'pr_branch': pr_branch,
-            'pr_base': pr_base
+            'pr_base': pr_base,
+            'jar_file_url': jar_file_url
         }
     except KeyError as e:
         logger.error(f"KeyError: {e}")
@@ -96,10 +99,9 @@ def process_sonarqube_result(event):
 def manage_sns_notifications(repo_name, project_key, branch_name, sonar_status, sonarqube_host, pr_triggered, pr_branch, pr_base, pull_request_id, jar_url):
     bucket_name = os.getenv('S3_BUCKET', 'cdk-data-pipeline-center-test')
     region = os.getenv('AWS_REGION', 'ap-southeast-1')
-    
+
     mailing_list_key = "config/mailing_list.json"
 
-    # Load the mailing list
     mail_list_raw_json = s3_obj.get_object(Bucket=bucket_name, Key=mailing_list_key)
     mail_list_json = mail_list_raw_json['Body'].read().decode('utf-8')
     MAIL_LIST = json.loads(mail_list_json)
@@ -113,7 +115,6 @@ def manage_sns_notifications(repo_name, project_key, branch_name, sonar_status, 
     relevant_emails = set()
     topic_arn = None
 
-    # Determine relevant emails and set topic name based on the tags
     for repo_tag_key, repo_tag_value in repo_tags.items():
         for mail_list_tag in MAIL_LIST['tags']:
             if repo_tag_key == mail_list_tag['key'] and repo_tag_value == mail_list_tag['value']:
@@ -125,12 +126,10 @@ def manage_sns_notifications(repo_name, project_key, branch_name, sonar_status, 
                     logger.info(f"{email} is relevant for tag {repo_tag_key}:{repo_tag_value}")
 
     if not topic_arn:
-        # Create or get the default topic if no specific topic was found
         default_topic_name = "cdx-sonarqube-notification-default"
         topic_arn = get_or_create_sns_topic(default_topic_name)
         logger.info(f"Using default SNS topic: {default_topic_name}")
 
-    # Manage subscriptions to the SNS topic
     next_token = None
     subscriptions = []
     while True:
@@ -157,7 +156,6 @@ def manage_sns_notifications(repo_name, project_key, branch_name, sonar_status, 
         if email not in relevant_emails:
             unsubscribe_email_from_topic(sub_arn)
 
-    # Construct the SonarQube link and additional information based on PR status
     if pr_triggered == 'true':
         sonarqube_link = f"{sonarqube_host}/dashboard?id={project_key}&pullRequest={pull_request_id}"
         pull_request_url = f"https://{region}.console.aws.amazon.com/codesuite/codecommit/repositories/{repo_name}/pull-requests/{pull_request_id}/details?region={region}"
@@ -165,18 +163,20 @@ def manage_sns_notifications(repo_name, project_key, branch_name, sonar_status, 
                            f"\nPR Branch: {pr_branch}\nPR Base: {pr_base}\nPull Request URL: {pull_request_url}")
         body = (f"SonarQube Quality Gate Status: {sonar_status}\n"
                 f"Repository Name: {repo_name}\n"
-                f"SonarQube Link: {sonarqube_link}\n"
-                f"JAR File URL: {jar_url}\n"  # Add the JAR File URL as a separate line
-                f"{additional_info}")
+                f"SonarQube Link: {sonarqube_link}\n")
+        if jar_url:
+            body += f"JAR File URL: {jar_url}\n"
+        body += additional_info
     else:
         sonarqube_link = f"{sonarqube_host}/dashboard?id={project_key}&branch={branch_name}"
         body = (f"SonarQube Quality Gate Status: {sonar_status}\n"
                 f"Repository Name: {repo_name}\n"
                 f"Branch Name: {branch_name}\n"
-                f"SonarQube Link: {sonarqube_link}\n"
-                f"JAR File URL: {jar_url}")  # Add the JAR File URL as a separate line
+                f"SonarQube Link: {sonarqube_link}\n")
+        if jar_url:
+            body += f"JAR File URL: {jar_url}"
 
-    subject = f'SonarQube Scan Result for {repo_name}'
+    subject = f"SonarQube Scan Result for {repo_name}"
     try:
         sns_send.publish(
             TopicArn=topic_arn,
@@ -194,15 +194,16 @@ def lambda_handler(event, context):
     result = process_sonarqube_result(event)
     if 'statusCode' in result:
         return result
-    
-    jar_url = event.get('properties', {}).get('sonar.analysis.jar_file_url', '')
+
+    jar_url = result.get('jar_file_url', '')
 
     if result['pr_triggered'] == 'true':
         try:
-            # SonarQube link for pull request
             sonarqube_link = f"{sonarqube_host}/dashboard?id={result['project_key']}&pullRequest={result['pull_request_id']}"
-            comment_content = f"SonarQube Result: {result['sonar_status']}.\n" \
-                              f"SonarQube Dashboard: {sonarqube_link}"
+            comment_content = (
+                f"SonarQube Result: {result['sonar_status']}.\n"
+                f"SonarQube Dashboard: {sonarqube_link}"
+            )
             codecommit.post_comment_for_pull_request(
                 pullRequestId=result['pull_request_id'],
                 repositoryName=result['repo_name'],
@@ -217,7 +218,7 @@ def lambda_handler(event, context):
                 'statusCode': 500,
                 'body': json.dumps(f"Error posting comment for pull request: {e}")
             }
-    
+
     manage_sns_notifications(
         result['repo_name'],
         result['project_key'],
@@ -228,7 +229,7 @@ def lambda_handler(event, context):
         result['pr_branch'],
         result['pr_base'],
         result['pull_request_id'],
-        jar_url
+        jar_url if jar_url else None
     )
 
     return {
