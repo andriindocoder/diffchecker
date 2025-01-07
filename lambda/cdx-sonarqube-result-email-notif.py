@@ -93,7 +93,7 @@ def process_sonarqube_result(event):
             'body': json.dumps(f'Error decoding JSON: {e}')
         }
 
-def manage_sns_notifications(repo_name, project_key, branch_name, sonar_status, sonarqube_host, pr_triggered, pr_branch, pr_base, pull_request_id):
+def manage_sns_notifications(repo_name, project_key, branch_name, sonar_status, sonarqube_host, pr_triggered, pr_branch, pr_base, pull_request_id, jar_url):
     bucket_name = os.getenv('S3_BUCKET', 'cdk-data-pipeline-center-test')
     region = os.getenv('AWS_REGION', 'ap-southeast-1')
     
@@ -161,20 +161,22 @@ def manage_sns_notifications(repo_name, project_key, branch_name, sonar_status, 
     if pr_triggered == 'true':
         sonarqube_link = f"{sonarqube_host}/dashboard?id={project_key}&pullRequest={pull_request_id}"
         pull_request_url = f"https://{region}.console.aws.amazon.com/codesuite/codecommit/repositories/{repo_name}/pull-requests/{pull_request_id}/details?region={region}"
-        additional_info = f"\nThis Sonarqube Scan was triggered by Pull Request\nPR Branch: {pr_branch}\nPR Base: {pr_base}\nPull Request URL: {pull_request_url}"
+        additional_info = (f"\nThis SonarQube Scan was triggered by Pull Request"
+                           f"\nPR Branch: {pr_branch}\nPR Base: {pr_base}\nPull Request URL: {pull_request_url}")
         body = (f"SonarQube Quality Gate Status: {sonar_status}\n"
                 f"Repository Name: {repo_name}\n"
-                f"Sonarqube Link: {sonarqube_link}{additional_info}")
+                f"SonarQube Link: {sonarqube_link}\n"
+                f"JAR File URL: {jar_url}\n"  # Add the JAR File URL as a separate line
+                f"{additional_info}")
     else:
         sonarqube_link = f"{sonarqube_host}/dashboard?id={project_key}&branch={branch_name}"
         body = (f"SonarQube Quality Gate Status: {sonar_status}\n"
                 f"Repository Name: {repo_name}\n"
                 f"Branch Name: {branch_name}\n"
-                f"Sonarqube Link: {sonarqube_link}")
+                f"SonarQube Link: {sonarqube_link}\n"
+                f"JAR File URL: {jar_url}")  # Add the JAR File URL as a separate line
 
     subject = f'SonarQube Scan Result for {repo_name}'
-    # logger.info(f"Notification sent to topic {topic_arn}")
-
     try:
         sns_send.publish(
             TopicArn=topic_arn,
@@ -193,12 +195,14 @@ def lambda_handler(event, context):
     if 'statusCode' in result:
         return result
     
+    jar_url = event.get('properties', {}).get('sonar.analysis.jar_file_url', '')
+
     if result['pr_triggered'] == 'true':
         try:
             # SonarQube link for pull request
             sonarqube_link = f"{sonarqube_host}/dashboard?id={result['project_key']}&pullRequest={result['pull_request_id']}"
-            comment_content = f"Sonarqube Result: {result['sonar_status']}.\n" \
-                              f"Sonarqube Dashboard: {sonarqube_link}"
+            comment_content = f"SonarQube Result: {result['sonar_status']}.\n" \
+                              f"SonarQube Dashboard: {sonarqube_link}"
             codecommit.post_comment_for_pull_request(
                 pullRequestId=result['pull_request_id'],
                 repositoryName=result['repo_name'],
@@ -214,7 +218,6 @@ def lambda_handler(event, context):
                 'body': json.dumps(f"Error posting comment for pull request: {e}")
             }
     
-    # Always pass the parameters, even if they might not be needed
     manage_sns_notifications(
         result['repo_name'],
         result['project_key'],
@@ -224,7 +227,8 @@ def lambda_handler(event, context):
         result['pr_triggered'],
         result['pr_branch'],
         result['pr_base'],
-        result['pull_request_id']
+        result['pull_request_id'],
+        jar_url
     )
 
     return {
