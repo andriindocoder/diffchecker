@@ -63,11 +63,18 @@ def process_sonarqube_result(event):
         pr_branch = body.get('properties', {}).get('sonar.analysis.pr_branch', '')
         pr_base = body.get('properties', {}).get('sonar.analysis.pr_base', '')
         jar_file_url = body.get('properties', {}).get('sonar.analysis.jar_file_url', '')
+        coverage = None
+
+        for condition in body.get('qualityGate', {}).get('conditions', []):
+            if condition.get('metric') == 'new_coverage' and condition.get('status') != 'NO_VALUE':
+                coverage = condition.get('value') + '%'
 
         logger.info("Parsed body: " + json.dumps(body))
         logger.info(f"SonarQube quality gate status: {sonar_status}")
         logger.info(f"PR triggered: {pr_triggered}")
         logger.info(f"JAR File URL: {jar_file_url}")
+        if coverage:
+            logger.info(f"Coverage: {coverage}")
 
         return {
             'sonar_status': sonar_status,
@@ -81,7 +88,8 @@ def process_sonarqube_result(event):
             'destination_commit': destination_commit,
             'pr_branch': pr_branch,
             'pr_base': pr_base,
-            'jar_file_url': jar_file_url
+            'jar_file_url': jar_file_url,
+            'coverage': coverage
         }
     except KeyError as e:
         logger.error(f"KeyError: {e}")
@@ -164,6 +172,8 @@ def manage_sns_notifications(repo_name, project_key, branch_name, sonar_status, 
         body = (f"SonarQube Quality Gate Status: {sonar_status}\n"
                 f"Repository Name: {repo_name}\n"
                 f"SonarQube Link: {sonarqube_link}\n")
+        if coverage:
+            body += f"Coverage: {coverage}\n"
         if jar_url:
             body += f"JAR File URL (Expired in 1 hour): {jar_url}\n"
         body += additional_info
@@ -173,6 +183,8 @@ def manage_sns_notifications(repo_name, project_key, branch_name, sonar_status, 
                 f"Repository Name: {repo_name}\n"
                 f"Branch Name: {branch_name}\n"
                 f"SonarQube Link: {sonarqube_link}\n")
+        if coverage:
+            body += f"Coverage: {coverage}\n"
         if jar_url:
             body += f"JAR File URL (Expired in 1 hour): {jar_url}"
 
@@ -196,6 +208,7 @@ def lambda_handler(event, context):
         return result
 
     jar_url = result.get('jar_file_url', '')
+    coverage = result.get('coverage', None)
 
     if result['pr_triggered'] == 'true':
         try:
@@ -229,7 +242,8 @@ def lambda_handler(event, context):
         result['pr_branch'],
         result['pr_base'],
         result['pull_request_id'],
-        jar_url if jar_url else None
+        jar_url,
+        coverage
     )
 
     return {
