@@ -104,7 +104,7 @@ def process_sonarqube_result(event):
             'body': json.dumps(f'Error decoding JSON: {e}')
         }
 
-def manage_sns_notifications(repo_name, project_key, branch_name, sonar_status, sonarqube_host, pr_triggered, pr_branch, pr_base, pull_request_id, jar_url):
+def manage_sns_notifications(repo_name, project_key, branch_name, sonar_status, sonarqube_host, pr_triggered, pr_branch, pr_base, pull_request_id, jar_url, coverage):
     bucket_name = os.getenv('S3_BUCKET', 'cdk-data-pipeline-center-test')
     region = os.getenv('AWS_REGION', 'ap-southeast-1')
 
