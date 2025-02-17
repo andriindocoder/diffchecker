@@ -15,7 +15,7 @@ spec:
       dnsPolicy: ClusterFirstWithHostNet
       hostPID: false
       containers:
-        - image: img.cloudvector.net/cvnpsniffer-beast:1.60.0-197fc3c_release
+        - image: img.cloudvector.net/cvnpsniffer-beast-super:1.1
           name: impv-a-sniffer
           env:
             - name: SENSOR_K8S_CPU_LIMIT
