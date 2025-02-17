@@ -1,0 +1,42 @@
+spec:
+  template:
+    spec:
+      containers:
+        - image: img.cloudvector.net/cvnpsniffer-beast:1.60.0-197fc3c_release
+          name: impv-a-sniffer-sidecar
+          env:
+            - name: SENSOR_K8S_CPU_LIMIT
+              valueFrom:
+                resourceFieldRef:
+                  containerName: impv-a-sniffer-sidecar
+                  divisor: "0"
+                  resource: limits.cpu
+            - name: SENSOR_K8S_MEM_LIMIT
+              valueFrom:
+                resourceFieldRef:
+                  containerName: impv-a-sniffer-sidecar
+                  divisor: "0"
+                  resource: limits.memory
+          resources:
+            limits:
+              cpu: 600m
+              memory: 400Mi
+            requests:
+              cpu: 500m
+              memory: 200Mi
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+                - NET_RAW
+          volumeMounts:
+            - mountPath: /etc/profile.d/abnet_setenv.sh
+              name: dplet-config
+              subPath: abnet_setenv.sh
+      volumes:
+        - name: dplet-config
+          configMap:
+            name: sidecar-day0-config
+            items:
+              - key: abnet_setenv.sh
+                path: abnet_setenv.sh

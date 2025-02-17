@@ -1,0 +1,9 @@
+ABNET_DRIVER_TYPE=pcap
+ABNET_TENANT_ID=2298854
+ABNET_INIT_HASH=8409364640aeb59cba2331bd121f6ec14788db3f8cea1c04ba7c99b229c88352
+ABNET_DEPLOY_MODE=easy
+ABNET_DPLET_ID=546607
+ABNET_STACK_TYPE=production
+ABNET_LOCALBAY_NAME=localbay.cloudvector.net
+ABNET_APISTATS_URL=http://api-security-engine-receiver.impv-anywhere.svc.cluster.local/api/v1/metrics/stats
+ABNET_LOCALBAY_URL=http://api-security-engine-receiver.impv-anywhere.svc.cluster.local
