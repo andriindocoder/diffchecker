@@ -43,7 +43,6 @@ phases:
   build:
     commands:
       - mvn --settings $CODEBUILD_SRC_DIR/settings.xml -DskipTests clean
-      - mvn prettier:write
       - mvn --settings $CODEBUILD_SRC_DIR/settings.xml -DskipTests package
  
   post_build:
