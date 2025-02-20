@@ -1,0 +1,70 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      java: corretto11
+      nodejs: 14
+    commands:
+      - git config --global credential.helper '!aws codecommit credential-helper $@'
+      - git config --global credential.UseHttpPath true
+      - git clone https://git-codecommit.ap-southeast-1.amazonaws.com/v1/repos/$REPOSITORY_NAME
+      - cd $REPOSITORY_NAME
+      - echo "Checking the current working directory and its contents"
+      - pwd
+      - ls -la
+      - echo "Installing redoc-cli globally"
+      - npm install -g redoc-cli
+  pre_build:
+    commands:
+      - echo "Setting remote URL"
+      - git remote set-url origin https://git-codecommit.ap-southeast-1.amazonaws.com/v1/repos/$REPOSITORY_NAME
+      - echo "Fetching and checking out the latest commit branch"
+      - git fetch origin $BRANCH_NAME
+      - git checkout $BRANCH_NAME
+      - echo "Downloading shell script from S3"
+      - aws s3 cp $ADD_SETTINGS_SCRIPT_S3_URI .
+      - aws s3 cp $ADD_SCHEMA_SCRIPT_S3_URI .
+      - aws s3 cp $UPDATE_YAML_SCRIPT_S3_URI .
+      - aws s3 cp $UPDATE_POM_SCRIPT_S3_URI .
+      - aws s3 cp $UPDATE_CLASSES_SCRIPT_S3_URI .
+      - chmod +x add-settings.sh
+      - chmod +x add-schema.sh
+      - chmod +x update-yaml.sh
+      - chmod +x update-pom.sh
+      - chmod +x update-classes.sh
+      - export CODEARTIFACT_AUTH_TOKEN=`aws codeartifact get-authorization-token --domain cdx-pfm --domain-owner 482680362026 --region ap-southeast-1 --query authorizationToken --output text`
+      - ./add-settings.sh 
+      - ./add-schema.sh 
+      - ./update-yaml.sh 
+      - ./update-pom.sh 
+      - ./update-classes.sh 
+      - aws --version
+      - aws ecr get-login-password --region ap-southeast-1 | docker login --username AWS --password-stdin 482680362026.dkr.ecr.ap-southeast-1.amazonaws.com
+  build:
+    commands:
+      - mvn --settings $CODEBUILD_SRC_DIR/settings.xml -DskipTests clean
+      - mvn prettier:write
+      - mvn --settings $CODEBUILD_SRC_DIR/settings.xml -DskipTests package
+ 
+  post_build:
+    commands:
+      - mkdir -p /app
+      - echo "Build completed"
+      - echo "Starting the application"
+      - nohup java -jar target/app.jar --spring.profiles.active=local &
+      - echo "Waiting for the application to start"
+      - sleep 60  # Adjust sleep time if needed to ensure the app is up and running
+      - echo "Fetching JSON from the /v3/api-docs endpoint"
+      - curl -s http://localhost:8080/internal/swagger-doc/v3/api-docs -o api.json 
+      - echo "Contents of JSON file"
+      - cat api.json
+      - echo "Converting $JSON_NAME to HTML using redoc-cli"
+      - redoc-cli bundle api.json -o $HTML_NAME
+      - echo "Uploading $HTML_NAME to S3"
+      - aws s3 cp $HTML_NAME $DEST_S3_URI/$REPOSITORY_NAME/
+      - aws s3 cp s3://beu-api-inventory-web/ /app --recursive
+      - cd /app
+      - ls -ltr
+      - docker build -t api-service-catalogue .
+      - docker tag api-service-catalogue:latest 482680362026.dkr.ecr.ap-southeast-1.amazonaws.com/api-service-catalogue:latest
+      - docker push 482680362026.dkr.ecr.ap-southeast-1.amazonaws.com/api-service-catalogue:latest
