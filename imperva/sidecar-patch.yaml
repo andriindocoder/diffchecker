@@ -24,11 +24,11 @@ spec:
             requests:
               cpu: 500m
               memory: 200Mi
-          securityContext:
-            capabilities:
-              add:
-                - NET_ADMIN
-                - NET_RAW
+#          securityContext:
+#            capabilities:
+#              add:
+#                - NET_ADMIN
+#                - NET_RAW
           volumeMounts:
             - mountPath: /etc/profile.d/abnet_setenv.sh
               name: dplet-config
