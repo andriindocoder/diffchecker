@@ -15,13 +15,17 @@ chmod 600 "$USER_SSH_KEYS_FOLDER/authorized_keys"
 # Clear the SSH_PUBLIC_KEY environment variable
 unset SSH_PUBLIC_KEY
 
-# Set PATH explicitly as a fallback
+# Set PATH explicitly, including /usr/bin for docker
 export JAVA_HOME=/usr/lib/jvm/java-11-amazon-corretto
 export M2_HOME=/opt/maven
-export PATH=$M2_HOME/bin:$JAVA_HOME/bin:$PATH
+export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$M2_HOME/bin:$JAVA_HOME/bin:$PATH
 
-# Source .bashrc
+# Source .bashrc (optional, for consistency)
 . /root/.bashrc
 
-# Start the SSH daemon
-exec /usr/sbin/sshd -D
+# Run the provided command (e.g., for local testing) or start sshd
+if [ $# -eq 0 ]; then
+  exec /usr/sbin/sshd -D
+else
+  exec "$@"
+fi
